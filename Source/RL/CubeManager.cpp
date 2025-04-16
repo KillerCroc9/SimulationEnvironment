@@ -22,6 +22,7 @@ void ACubeManager::BeginPlay()
             int32 AssignedPort = StartingPort + i;
             Cube->StartTCPReceiver(AssignedPort);
             UE_LOG(LogTemp, Warning, TEXT("Spawned cube %d on port %d"), i, AssignedPort);
+            Cube->Speed = SpeedManager;
         }
     }
 }

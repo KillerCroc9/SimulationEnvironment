@@ -25,29 +25,49 @@ public:
     void EndPlay(const EEndPlayReason::Type EndPlayReason);
     void StartTCPReceiver(int32 Port);  // new
     int32 CubeSocketPort;
+    float Speed = 100;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game State")
+    bool Won = false;
 
-
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game State")
+    bool Lost = false;
 
 protected:
     virtual void BeginPlay() override;
 
 private:
-    FVector MovementInput;
-    FRotator RotationInput;
+
 
     FSocket* ListenerSocket;
     FSocket* ConnectionSocket;
     FString SocketName = TEXT("PythonSocket");
     void TCPSocketListener();
     FTimerHandle SocketTimerHandle;
-    void Perform360RayScan(float Distance = 1000.0f, int32 NumRays = 36); // 360° scan
 
     FTimerHandle ScanTimerHandle;
 
-    float CurrentScanAngle = 0.0f;
-    int32 RaysPerFrame = 15;
-    float RayDistance = 1000.0f;
+    UPROPERTY(VisibleAnywhere)
+    UStaticMeshComponent* MeshComponent;
 
-    void PerformTimedScan(); // Called from timer
+
+    float CurrentScanAngle = 0.0f;
+    int32 RaysPerFrame = 36;
+    float RayDistance = 1000.0f;
+    int32 FrameCounter = 0;
+    TArray<FScanHitResult> PerformTimedScan();
+    TArray<FScanHitResult> ScanResults;
+
+};
+
+USTRUCT(BlueprintType)
+struct FScanHitResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly)
+    FVector HitLocation;
+
+    UPROPERTY(BlueprintReadOnly)
+    FString ActorName;
 };

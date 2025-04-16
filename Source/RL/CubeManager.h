@@ -24,4 +24,10 @@ public:
 
     UPROPERTY(EditAnywhere)
     int32 StartingPort = 5001;
+
+
+    UPROPERTY(EditAnywhere)
+    int32 SpeedManager = 100;
+
+   
 };

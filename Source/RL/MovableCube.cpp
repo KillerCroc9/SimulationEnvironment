@@ -18,18 +18,62 @@ void AMovableCube::BeginPlay()
         Mesh->SetCollisionResponseToAllChannels(ECR_Block);
         Mesh->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);  // Ignore other cubes
         Mesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+        MeshComponent = Mesh;
     }
-    GetWorld()->GetTimerManager().SetTimer(ScanTimerHandle, this, &AMovableCube::PerformTimedScan, 1.f, true);
-
 }
 
-void AMovableCube::PerformTimedScan()
+void AMovableCube::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+    if(Won || Lost)
+    {
+        if (ConnectionSocket && ConnectionSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected)
+        {
+            FString StatusMessage = Won ? TEXT("Win\n") : TEXT("Lose\n");
+            FTCHARToUTF8 Convert(*StatusMessage);
+            int32 BytesSent = 0;
+            ConnectionSocket->Send((uint8*)Convert.Get(), Convert.Length(), BytesSent);
+        }
+        MeshComponent->SetSimulatePhysics(false);
+        return;  // skip the rest of Tick
+    }
+    FrameCounter++;
+    if (FrameCounter % 5 == 0)
+    {
+        PerformTimedScan();  // every 5th frame
+    }
+
+    if (FrameCounter % 5 == 0 && ConnectionSocket && ConnectionSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected)
+    {
+        FString Response;
+        for (const FScanHitResult& Result : ScanResults)
+        {
+            Response += FString::Printf(TEXT("%.2f %.2f %.2f %s\n"),
+                Result.HitLocation.X,
+                Result.HitLocation.Y,
+                Result.HitLocation.Z,
+                *Result.ActorName);
+        }
+
+        Response += TEXT("\n");  // Optional double newline to indicate end of batch
+
+        FTCHARToUTF8 Convert(*Response);
+        int32 BytesSent = 0;
+        ConnectionSocket->Send((uint8*)Convert.Get(), Convert.Length(), BytesSent);
+
+        ScanResults.Empty();  // Clear after sending
+    }
+}
+
+TArray<FScanHitResult> AMovableCube::PerformTimedScan()
 {
     FVector Origin = GetActorLocation();
     UWorld* World = GetWorld();
-    if (!World) return;
 
-    float AngleStep = 360.0f / (360.0f / RaysPerFrame);  // = 24 deg if 15 rays/frame
+    if (!World)
+        return ScanResults;
+
+    float AngleStep = 360.0f / (360.0f / RaysPerFrame);
 
     for (int32 i = 0; i < RaysPerFrame; ++i)
     {
@@ -46,20 +90,18 @@ void AMovableCube::PerformTimedScan()
 
         if (bHit)
         {
-            FVector HitLocation = HitResult.ImpactPoint;
-            UE_LOG(LogTemp, Log, TEXT("Scan Hit: %s (From: %s)"), *HitLocation.ToString(), *Origin.ToString());
+            FScanHitResult ScanHit;
+            ScanHit.HitLocation = HitResult.ImpactPoint;
+            ScanHit.ActorName = HitResult.GetActor() ? HitResult.GetActor()->GetName() : TEXT("None");
 
-            DrawDebugLine(World, Origin, HitLocation, FColor::Green, true, -1.0f, 0, 2.0f);
-            DrawDebugPoint(World, HitLocation, 10.f, FColor::Red, true, -1.0f);  // or even 1.0f
-        }
-        else
-        {
-            DrawDebugLine(World, Origin, End, FColor::Blue, true, -1.0f, 0, 2.f);
+            ScanResults.Add(ScanHit);
+
+            DrawDebugPoint(World, HitResult.ImpactPoint, 10.f, FColor::Red, true, -1.0f);
         }
     }
 
-    // Advance scan angle
     CurrentScanAngle = FMath::Fmod(CurrentScanAngle + RaysPerFrame * AngleStep, 360.0f);
+    return ScanResults;
 }
 
 void AMovableCube::StartTCPReceiver(int32 Port)
@@ -126,37 +168,34 @@ void AMovableCube::TCPSocketListener()
                 float X = FCString::Atof(*Parsed[0]);
                 float Y = FCString::Atof(*Parsed[1]);
                 float Yaw = FCString::Atof(*Parsed[2]);
+                
 
                 MoveCube(X, Y, Yaw);
             }
 
-            // ✅ Send reply
-            const TCHAR* Response = TEXT("OK\n");
-            FTCHARToUTF8 Convert(*FString(Response));
-            int32 BytesSent = 0;
-            ConnectionSocket->Send((uint8*)Convert.Get(), Convert.Length(), BytesSent);
+        
         }
     }
 }
 
-void AMovableCube::Tick(float DeltaTime)
-{
-    Super::Tick(DeltaTime);
-    AddActorWorldOffset(MovementInput * DeltaTime, true);
-    AddActorLocalRotation(RotationInput * DeltaTime);
-}
 
 void AMovableCube::MoveCube(float X, float Y, float Yaw)
 {
-    FVector Force = FVector(X * 1000000.0f, Y * 1000000.0f, 0.0f); // Increase by 10×
-    FVector Torque = FVector(0.0f, 0.0f, Yaw * 1000000.0f);      // Increase by 10×
 
+    float DeltaTime = GetWorld()->GetDeltaSeconds();
 
-    if (UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(GetRootComponent()))
-    {
-        Mesh->AddForce(Force);
-        Mesh->AddTorqueInRadians(Torque);
-    }
+    FVector Forward = GetActorForwardVector();
+    FVector Right = GetActorRightVector();
+
+    // Calculate the direction from input
+    FVector ForceDirection = (Forward * X + Right * Y).GetSafeNormal();
+
+    // Scale force by DeltaTime and Speed for consistent behavior
+    float ForceStrength = Speed * DeltaTime * 1000.0f; // 1000 = tuning multiplier
+    FVector ForceToApply = ForceDirection * ForceStrength;
+
+    MeshComponent->AddForce(ForceToApply);
+
 }
 
 
@@ -181,51 +220,3 @@ void AMovableCube::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 
-void AMovableCube::Perform360RayScan(float Distance, int32 NumRays)
-{
-    FVector Origin = GetActorLocation();
-    FRotator Rotation = GetActorRotation();
-    UWorld* World = GetWorld();
-
-    if (!World) return;
-
-    float AngleStep = 360.0f / NumRays;
-
-    for (int32 i = 0; i < NumRays; ++i)
-    {
-        float Angle = i * AngleStep;
-        float Radians = FMath::DegreesToRadians(Angle);
-        FVector Direction = FVector(FMath::Cos(Radians), FMath::Sin(Radians), 0.0f);
-
-        FVector End = Origin + Direction * Distance;
-
-        FHitResult HitResult;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(this); // Don't hit yourself
-
-        bool bHit = World->LineTraceSingleByChannel(
-            HitResult,
-            Origin,
-            End,
-            ECC_Visibility,
-            Params
-        );
-
-        if (bHit)
-        {
-            FVector HitLocation = HitResult.ImpactPoint;
-
-            UE_LOG(LogTemp, Log, TEXT("Ray %d Hit at: %s (From: %s)"),
-                i, *HitLocation.ToString(), *Origin.ToString());
-
-            // Optional: draw hit
-            DrawDebugLine(World, Origin, HitLocation, FColor::Green, false, 0.1f, 0, 1.0f);
-            DrawDebugPoint(World, HitLocation, 10.f, FColor::Red, false, 0.1f);
-        }
-        else
-        {
-            // Optional: draw a miss line
-            DrawDebugLine(World, Origin, End, FColor::Blue, false, 0.1f, 0, 0.5f);
-        }
-    }
-}
