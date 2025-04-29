@@ -45,6 +45,7 @@ void AMovableCube::Tick(float DeltaTime)
             ConnectionSocket->Send((uint8*)Convert.Get(), Convert.Length(), BytesSent);
         }
         MeshComponent->SetSimulatePhysics(false);
+        ResetCube();  // Reset the cube after sending the message
         return;  // skip the rest of Tick
     }
     FrameCounter++;
@@ -238,3 +239,20 @@ void AMovableCube::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 
+void AMovableCube::ResetCube()
+{
+    SetActorLocation(FVector::ZeroVector);
+    SetActorRotation(FRotator::ZeroRotator);
+
+    if (MeshComponent)
+    {
+        MeshComponent->SetSimulatePhysics(false);
+        MeshComponent->SetPhysicsLinearVelocity(FVector::ZeroVector);
+        MeshComponent->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+        MeshComponent->SetSimulatePhysics(true);
+    }
+
+    Won = false;
+    Lost = false;
+    FrameCounter = 0;
+}

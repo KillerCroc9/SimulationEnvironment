@@ -23,6 +23,7 @@ public:
     void MoveCube(float X, float Y, float Yaw); // from socket
 
     void EndPlay(const EEndPlayReason::Type EndPlayReason);
+    void ResetCube();
     void StartTCPReceiver(int32 Port);  // new
     int32 CubeSocketPort;
     float Speed = 100;
