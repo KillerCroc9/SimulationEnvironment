@@ -29,5 +29,13 @@ public:
     UPROPERTY(EditAnywhere)
     int32 SpeedManager = 100;
 
+
+
+    UFUNCTION()
+    void ResetScene();  // <-- Reset function here
+
+private:
+    FTimerHandle ResetTimerHandle;  // <-- Timer handle
+    TArray<AActor*> SpawnedCubes;    // <-- Store spawned cubes
    
 };

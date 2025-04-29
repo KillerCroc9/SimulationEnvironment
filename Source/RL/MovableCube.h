@@ -53,11 +53,16 @@ private:
 
     float CurrentScanAngle = 0.0f;
     int32 RaysPerFrame = 36;
-    float RayDistance = 1000.0f;
+    float RayDistance = 10000.0f;
+
     int32 FrameCounter = 0;
     TArray<FScanHitResult> PerformTimedScan();
     TArray<FScanHitResult> ScanResults;
 
+    UPROPERTY()
+    AActor* WinActor = nullptr;
+
+    FVector WinLocation;
 };
 
 USTRUCT(BlueprintType)

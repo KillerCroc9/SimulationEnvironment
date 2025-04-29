@@ -1,5 +1,6 @@
 ﻿// MovableCube.cpp
 #include "MovableCube.h"
+#include <Kismet/GameplayStatics.h>
 #include "DrawDebugHelpers.h"
 
 
@@ -19,6 +20,15 @@ void AMovableCube::BeginPlay()
         Mesh->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);  // Ignore other cubes
         Mesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
         MeshComponent = Mesh;
+    }
+    // Find all actors with tag "Win"
+    TArray<AActor*> FoundActors;
+    UGameplayStatics::GetAllActorsWithTag(GetWorld(), FName("Win"), FoundActors);
+
+    if (FoundActors.Num() > 0)
+    {
+        WinActor = FoundActors[0]; // Assuming only one "Win"
+        WinLocation = WinActor->GetActorLocation();
     }
 }
 
@@ -46,6 +56,13 @@ void AMovableCube::Tick(float DeltaTime)
     if (FrameCounter % 5 == 0 && ConnectionSocket && ConnectionSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected)
     {
         FString Response;
+        Response += TEXT("\n");
+        Response += TEXT("Cube ID: ") + FString::Printf(TEXT("%d\n"), GetUniqueID());
+		Response += TEXT("Frame: ") + FString::Printf(TEXT("%d\n"), FrameCounter);
+        Response += TEXT("Player Position:") + FString::Printf(TEXT("%.2f %.2f %.2f\n"), GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+		Response += TEXT("Win Location:") + FString::Printf(TEXT("%.2f %.2f %.2f\n"), WinLocation.X, WinLocation.Y, WinLocation.Z);
+		Response += TEXT("Scan Results:\n");
+		Response += TEXT("X Y Z ActorName\n");
         for (const FScanHitResult& Result : ScanResults)
         {
             Response += FString::Printf(TEXT("%.2f %.2f %.2f %s\n"),
@@ -92,13 +109,16 @@ TArray<FScanHitResult> AMovableCube::PerformTimedScan()
         {
             FScanHitResult ScanHit;
             ScanHit.HitLocation = HitResult.ImpactPoint;
-            ScanHit.ActorName = HitResult.GetActor() ? HitResult.GetActor()->GetName() : TEXT("None");
+            ScanHit.ActorName = HitResult.GetActor() && HitResult.GetActor()->Tags.Num() > 0
+                ? HitResult.GetActor()->Tags[0].ToString()
+                : TEXT("None");
 
             ScanResults.Add(ScanHit);
 
-            DrawDebugPoint(World, HitResult.ImpactPoint, 10.f, FColor::Red, true, -1.0f);
+            //DrawDebugPoint(World, HitResult.ImpactPoint, 10.f, FColor::Red, true, -1.0f);
         }
     }
+
 
     CurrentScanAngle = FMath::Fmod(CurrentScanAngle + RaysPerFrame * AngleStep, 360.0f);
     return ScanResults;
@@ -147,7 +167,7 @@ void AMovableCube::TCPSocketListener()
     }
 
     // ✅ Process data if connected
-    if (ConnectionSocket && ConnectionSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected)
+    if (ConnectionSocket && ConnectionSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected && MeshComponent->IsSimulatingPhysics()==true)
     {
         TArray<uint8> ReceivedData;
         uint32 Size;
@@ -178,7 +198,6 @@ void AMovableCube::TCPSocketListener()
     }
 }
 
-
 void AMovableCube::MoveCube(float X, float Y, float Yaw)
 {
 
@@ -197,7 +216,6 @@ void AMovableCube::MoveCube(float X, float Y, float Yaw)
     MeshComponent->AddForce(ForceToApply);
 
 }
-
 
 void AMovableCube::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
