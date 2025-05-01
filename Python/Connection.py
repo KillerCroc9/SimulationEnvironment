@@ -1,80 +1,67 @@
-import socket
-import threading
-import time
+from flask import Flask, request, jsonify
 import random
 
-NUM_CUBES = 100
-START_PORT = 5500
-SEND_INTERVAL = .005  # seconds
+app = Flask(__name__)
 
-class CubeClient(threading.Thread):
-    def __init__(self, port, cube_id):
-        super().__init__()
-        self.port = port
-        self.cube_id = cube_id
-        self.sock = None
-        self.running = True
+# 🔢 Number of cubes you're controlling
+NUM_CUBES = 100  # change as needed
 
-    def connect(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            self.sock.connect(("127.0.0.1", self.port))
-            self.sock.settimeout(1.0)
-            print(f"[Cube {self.cube_id}] Connected to port {self.port}")
-        except Exception as e:
-            print(f"[Cube {self.cube_id}] Connection failed: {e}")
-            self.running = False
+# 🔁 Generate random movement commands (yaw always 0.0)
+def generate_random_move_commands():
+    return {
+        cube_id: {
+            "x": random.uniform(1.0, -1.0),
+            "y": random.uniform(1.0, 1.0),
+            "yaw": 0.0
+        }
+        for cube_id in range(NUM_CUBES)
+    }
 
-    def run(self):
-        self.connect()
-        while self.running:
-            try:
-                # Generate simple control input
-                x = random.uniform(-1, 1)
-                y = random.uniform(-1, 1)
-                yaw = random.uniform(0.0, 0.0)  # No yaw control in unreal
-                # Send control input to Unreal Engine
+@app.route('/receive_data', methods=['POST'])
+def receive_data():
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No JSON received'}), 400
 
-                msg = f"{x:.2f} {y:.2f} {yaw:.2f}\n"
-                self.sock.sendall(msg.encode('utf-8'))
+    print("=== Received Cube Data ===")
+    # cubes = data.get("cubes", [])
+    # for cube in cubes:
+    #     cube_id = cube.get("id", -1)
+    #     player_loc = cube.get("Player_Location", {})
+    #     win_loc = cube.get("win_location", {})
+    #     scans = cube.get("scan_results", [])
 
-                # Try to read response from Unreal
-                try:
-                    response = self.sock.recv(1024)
-                    if response:
-                        print(f"[Cube {self.cube_id}] Response: {response.decode('utf-8').strip()}")
-                    else:
-                        print(f"[Cube {self.cube_id}] No response — Unreal may have dropped connection.")
-                        self.running = False
-                except socket.timeout:
-                    pass  # expected if no reply quickly
+    #     print(f"Cube ID: {cube_id}")
+    #     print(f"  Player Location: ({player_loc.get('x')}, {player_loc.get('y')}, {player_loc.get('z')})")
+    #     print(f"  Win Location: ({win_loc.get('x')}, {win_loc.get('y')}, {win_loc.get('z')})")
 
-                time.sleep(SEND_INTERVAL)
+    #     print("  Scan Results:")
+    #     for scan in scans:
+    #         print(f"    → Hit @ ({scan.get('x')}, {scan.get('y')}, {scan.get('z')}), Actor: {scan.get('actor')}")
+    #     print("")
+    cubes = data.get("cubes", [])
+    for cube in cubes:
+        cube_id = cube.get("id", -1)
+        status = cube.get("status", "unknown")
+        print(f"Cube {cube_id}: {status}")
+    # ✅ Generate and return movement commands for all cubes
+    move_commands = generate_random_move_commands()
+    all_commands = [
+        {"id": cube_id, **cmd}
+        for cube_id, cmd in move_commands.items()
+    ]
+    return jsonify({"commands": all_commands})
 
-            except Exception as e:
-                print(f"[Cube {self.cube_id}] Error: {e}")
-                self.running = False
 
-        if self.sock:
-            self.sock.close()
-            print(f"[Cube {self.cube_id}] Socket closed.")
+@app.route('/get_move')
+def get_move():
+    move_commands = generate_random_move_commands()
+    all_commands = [
+        {"id": cube_id, **cmd}
+        for cube_id, cmd in move_commands.items()
+    ]
+    return jsonify({"commands": all_commands})
 
-# Launch all cube threads
-clients = []
 
-for i in range(NUM_CUBES):
-    port = START_PORT + i
-    client = CubeClient(port, i)
-    client.start()
-    clients.append(client)
-
-try:
-    while any(client.is_alive() for client in clients):
-        time.sleep(1)
-
-except KeyboardInterrupt:
-    print("Stopping all clients...")
-    for client in clients:
-        client.running = False
-    for client in clients:
-        client.join()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000, threaded=False)
